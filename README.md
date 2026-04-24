@@ -154,6 +154,16 @@ than duplicate partial attempts.
 See [docs/methodology.md](docs/methodology.md) for the scoring philosophy and
 calibration scenarios.
 
+## Troubleshooting
+
+### DeepSeek reasoning_content errors
+
+Some DeepSeek models on OpenRouter require reasoning content to be replayed
+during thinking-mode tool calls. Pi-Bench patches active benchmark requests so
+OpenRouter's `reasoning` field is also sent as DeepSeek's expected
+`reasoning_content` field. If you still see a `reasoning_content` provider
+error, update Pi-Bench and restart Pi.
+
 ## Development
 
 ```bash

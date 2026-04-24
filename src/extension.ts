@@ -121,16 +121,42 @@ const openRouterSupportsReasoning = (model: OpenRouterModelSummary): boolean => 
   return params.includes("reasoning") || params.includes("include_reasoning") || params.includes("reasoning_effort");
 };
 
-const registerLiveOpenRouterModel = async (
+const registerBenchOpenRouterModel = (
+  pi: ExtensionAPI,
+  ctx: CommandContext,
+  model: Model<any>,
+  apiKey: string,
+): Model<any> | undefined => {
+  pi.registerProvider("openrouter-live", {
+    baseUrl: "https://openrouter.ai/api/v1",
+    apiKey,
+    api: "openai-completions",
+    models: [
+      {
+        id: model.id,
+        name: model.name ?? model.id,
+        reasoning: model.reasoning,
+        input: model.input,
+        cost: model.cost,
+        contextWindow: model.contextWindow,
+        maxTokens: model.maxTokens,
+        compat: {
+          ...model.compat,
+          thinkingFormat: "openrouter",
+        },
+      },
+    ],
+  });
+
+  return ctx.modelRegistry.find("openrouter-live", model.id);
+};
+
+const registerLiveOpenRouterModel = (
   pi: ExtensionAPI,
   ctx: CommandContext,
   model: OpenRouterModelSummary,
-): Promise<Model<any> | undefined> => {
-  const apiKey = await ensureOpenRouterApiKey(ctx);
-  if (!apiKey) {
-    return undefined;
-  }
-
+  apiKey: string,
+): Model<any> | undefined => {
   pi.registerProvider("openrouter-live", {
     baseUrl: "https://openrouter.ai/api/v1",
     apiKey,
@@ -149,6 +175,9 @@ const registerLiveOpenRouterModel = async (
         },
         contextWindow: model.context_length ?? 128000,
         maxTokens: model.top_provider?.max_completion_tokens ?? 16384,
+        compat: {
+          thinkingFormat: "openrouter",
+        },
       },
     ],
   });
@@ -205,8 +234,13 @@ const selectOpenRouterModel = async (
   }
 
   if (ctx.model && isOpenRouterModel(ctx.model)) {
-    ctx.ui.notify(`Pi-Bench will use the current OpenRouter model ${formatModelLabel(ctx.model)}.`, "info");
-    return ctx.model;
+    const openRouterApiKey = await ensureOpenRouterApiKey(ctx);
+    if (!openRouterApiKey) return undefined;
+    const benchModel = registerBenchOpenRouterModel(pi, ctx, ctx.model, openRouterApiKey);
+    if (benchModel) {
+      ctx.ui.notify(`Pi-Bench will use ${formatModelLabel(benchModel)}.`, "info");
+    }
+    return benchModel;
   }
 
   const openRouterApiKey = await ensureOpenRouterApiKey(ctx);
@@ -223,10 +257,16 @@ const resolveOpenRouterModel = async (
   ctx: CommandContext,
   query: string,
 ): Promise<Model<any> | undefined> => {
+  const openRouterApiKey = await ensureOpenRouterApiKey(ctx);
+  if (!openRouterApiKey) return undefined;
+
   const exactLocalMatch = findExactOpenRouterModel(ctx, query);
   if (exactLocalMatch) {
-    ctx.ui.notify(`Pi-Bench matched "${query}" to ${formatModelLabel(exactLocalMatch)}.`, "info");
-    return exactLocalMatch;
+    const benchModel = registerBenchOpenRouterModel(pi, ctx, exactLocalMatch, openRouterApiKey);
+    if (benchModel) {
+      ctx.ui.notify(`Pi-Bench matched "${query}" to ${formatModelLabel(benchModel)}.`, "info");
+    }
+    return benchModel;
   }
 
   let openRouterMatch;
@@ -246,19 +286,50 @@ const resolveOpenRouterModel = async (
   }
 
   const resolvedId = openRouterMatch.model.id;
-  const model = ctx.modelRegistry.find("openrouter", resolvedId);
-  if (model) {
-    ctx.ui.notify(`Pi-Bench matched "${query}" to OpenRouter model ${resolvedId}.`, "info");
-    return model;
+  const existingModel = ctx.modelRegistry.find("openrouter", resolvedId);
+  if (existingModel) {
+    const benchModel = registerBenchOpenRouterModel(pi, ctx, existingModel, openRouterApiKey);
+    if (benchModel) {
+      ctx.ui.notify(`Pi-Bench matched "${query}" to ${formatModelLabel(benchModel)}.`, "info");
+    }
+    return benchModel;
   }
 
-  const liveModel = await registerLiveOpenRouterModel(pi, ctx, openRouterMatch.model);
+  const liveModel = registerLiveOpenRouterModel(pi, ctx, openRouterMatch.model, openRouterApiKey);
   if (liveModel) {
     ctx.ui.notify(`Pi-Bench matched "${query}" to live OpenRouter model ${resolvedId}.`, "info");
     return liveModel;
   }
 
   return undefined;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null;
+};
+
+export const patchDeepSeekReasoningContent = (payload: unknown): unknown | undefined => {
+  if (!isRecord(payload)) return undefined;
+  const modelId = typeof payload.model === "string" ? payload.model.toLowerCase() : "";
+  if (!modelId.includes("deepseek")) return undefined;
+  if (!Array.isArray(payload.messages)) return undefined;
+
+  let changed = false;
+  const messages = payload.messages.map((message) => {
+    if (
+      !isRecord(message) ||
+      message.role !== "assistant" ||
+      typeof message.reasoning !== "string" ||
+      typeof message.reasoning_content === "string"
+    ) {
+      return message;
+    }
+
+    changed = true;
+    return { ...message, reasoning_content: message.reasoning };
+  });
+
+  return changed ? { ...payload, messages } : undefined;
 };
 
 export default function piBenchExtension(pi: ExtensionAPI) {
@@ -390,6 +461,11 @@ export default function piBenchExtension(pi: ExtensionAPI) {
       status: event.status,
       isError: true,
     });
+  });
+
+  pi.on("before_provider_request", async (event) => {
+    if (!getActiveRun()) return undefined;
+    return patchDeepSeekReasoningContent(event.payload);
   });
 
   pi.on("model_select", async (event, ctx) => {

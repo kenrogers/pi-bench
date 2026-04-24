@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { createRun, scoreRun } from "../src/pibench/core.ts";
 import { saveRunResult, loadHistory } from "../src/pibench/history.ts";
+import { patchDeepSeekReasoningContent } from "../src/extension.ts";
 import type { BenchEvent } from "../src/pibench/types.ts";
 
 let testChain = Promise.resolve();
@@ -208,4 +209,33 @@ serialTest("saving the same run twice keeps one history row and increments attem
     assert.equal(history.filter((entry) => entry.runId === run.id).length, 1);
     assert.equal(history[0]?.attempt, 2);
   });
+});
+
+serialTest("DeepSeek OpenRouter payloads preserve reasoning_content for tool turns", async () => {
+  const payload = {
+    model: "deepseek/deepseek-v4-flash",
+    messages: [
+      { role: "user", content: "Fix the bug" },
+      {
+        role: "assistant",
+        content: "",
+        reasoning: "I need to inspect the files first.",
+        tool_calls: [{ id: "call_1", type: "function", function: { name: "read", arguments: "{}" } }],
+      },
+      { role: "tool", tool_call_id: "call_1", content: "..." },
+    ],
+  };
+
+  const patched = patchDeepSeekReasoningContent(payload) as { messages: Array<Record<string, unknown>> };
+  assert.notEqual(patched, undefined);
+  assert.equal(patched.messages[1]?.reasoning_content, "I need to inspect the files first.");
+});
+
+serialTest("non-DeepSeek payloads are left alone by the reasoning_content shim", async () => {
+  const payload = {
+    model: "anthropic/claude-sonnet-4.5",
+    messages: [{ role: "assistant", content: "", reasoning: "private reasoning" }],
+  };
+
+  assert.equal(patchDeepSeekReasoningContent(payload), undefined);
 });
