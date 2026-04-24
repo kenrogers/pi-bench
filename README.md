@@ -96,6 +96,7 @@ Examples:
 /pibench run qwen/qwen3-coder
 /pibench run deepseek 4
 /pibench run quick deepseek coder
+/pibench run deepseek4pro, deepseek4flash, kimik2.6
 /pibench compare quick deepseek 4 flash vs qwen/qwen3-coder vs kimi k2
 /pibench doctor
 /pibench history
@@ -109,10 +110,11 @@ OpenRouter's live `/api/v1/models` list so recent releases can be used before
 Pi's generated model registry knows about them. If OpenRouter finds a match that
 Pi does not know yet, Pi-Bench registers a temporary `openrouter-live` provider.
 
-`/pibench compare` runs multiple models sequentially. Separate model queries
-with `vs`, `|`, or commas. Each model gets its own fresh workspace and history
-entry, but all runs in the comparison share the same generated task seed so the
-scores are easier to compare.
+`/pibench compare` runs multiple models sequentially. `/pibench run` also
+promotes to comparison mode when the model query contains multiple models.
+Separate model queries with `vs`, `|`, or commas. Each model gets its own fresh
+workspace and history entry, but all runs in the comparison share the same
+generated task seed so the scores are easier to compare.
 
 ## How It Works
 

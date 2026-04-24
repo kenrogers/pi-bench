@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { createRun, scoreRun } from "../src/pibench/core.ts";
 import { saveRunResult, loadHistory } from "../src/pibench/history.ts";
-import { parseCompareArgs, patchDeepSeekReasoningContent } from "../src/extension.ts";
+import { parseCompareArgs, patchDeepSeekReasoningContent, splitModelQueries } from "../src/extension.ts";
 import type { BenchEvent } from "../src/pibench/types.ts";
 
 let testChain = Promise.resolve();
@@ -252,4 +252,12 @@ serialTest("compare arguments support comma and pipe separators", async () => {
     suite: "quick",
     modelQueries: ["deepseek 4 flash", "qwen/qwen3-coder", "kimi k2"],
   });
+});
+
+serialTest("run arguments can detect comma-separated comparison models", async () => {
+  assert.deepEqual(splitModelQueries("deepseek4pro, deepseek4flash, kimik2.6"), [
+    "deepseek4pro",
+    "deepseek4flash",
+    "kimik2.6",
+  ]);
 });

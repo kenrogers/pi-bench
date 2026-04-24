@@ -49,21 +49,29 @@ export const parseCompareArgs = (args: string): { suite: string; modelQueries: s
   const first = parts[0];
   const suite = first && knownSuites.has(first) ? first : "quick";
   const queryText = suite === first ? trimmed.slice(first.length).trim() : trimmed;
-  const modelQueries = queryText
+  return { suite, modelQueries: splitModelQueries(queryText) };
+};
+
+export const splitModelQueries = (queryText: string): string[] => {
+  return queryText
     .split(/\s+(?:vs|versus)\s+|\s*[|,]\s*/i)
     .map((query) => query.trim())
     .filter(Boolean);
-  return { suite, modelQueries };
 };
 
 const runCommand = async (pi: ExtensionAPI, args: string, ctx: CommandContext) => {
   await ctx.waitForIdle();
-  if (activeCompareBatch) {
-    ctx.ui.notify("A Pi-Bench comparison is already running. Finish it or restart Pi before starting another run.", "warning");
+  if (getActiveRun() || activeCompareBatch) {
+    ctx.ui.notify("A Pi-Bench run is already active. Finish it before starting another run.", "warning");
     return;
   }
 
   const { suite, modelQuery } = parseRunArgs(args);
+  const modelQueries = modelQuery ? splitModelQueries(modelQuery) : [];
+  if (modelQueries.length > 1) {
+    await startCompareBatch(pi, ctx, suite, modelQueries);
+    return;
+  }
 
   const selectedModel = await selectOpenRouterModel(pi, ctx, modelQuery);
   if (!selectedModel) return;
@@ -106,6 +114,15 @@ const compareCommand = async (pi: ExtensionAPI, args: string, ctx: CommandContex
     return;
   }
 
+  await startCompareBatch(pi, ctx, suite, modelQueries);
+};
+
+const startCompareBatch = async (
+  pi: ExtensionAPI,
+  ctx: PiBenchContext,
+  suite: string,
+  modelQueries: string[],
+) => {
   const openRouterApiKey = await ensureOpenRouterApiKey(ctx);
   if (!openRouterApiKey) return;
 
@@ -590,7 +607,6 @@ export default function piBenchExtension(pi: ExtensionAPI) {
         activeCompareBatch.currentRunId = undefined;
       }
       clearActiveRun();
-      ctx.abort();
       if (shouldContinueCompare) {
         setTimeout(() => {
           void startNextCompareRun(pi, ctx);
