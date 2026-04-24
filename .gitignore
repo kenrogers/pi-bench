@@ -1,0 +1,16 @@
+node_modules/
+npm-debug.log*
+.DS_Store
+.env
+.env.*
+!.env.example
+dist/
+coverage/
+.turbo/
+.cache/
+*.tsbuildinfo
+
+# Pi-Bench run data lives under ~/.pi by default, but keep local scratch copies out too.
+.pi-bench/
+runs/
+history.json

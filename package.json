@@ -1,0 +1,48 @@
+{
+  "name": "pi-bench",
+  "version": "0.1.0",
+  "description": "A local Pi extension for benchmarking OpenRouter models and Pi setups on generated coding tasks.",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "author": "Kenny <https://github.com/badlogic>",
+  "homepage": "https://github.com/badlogic/pi-bench#readme",
+  "bugs": {
+    "url": "https://github.com/badlogic/pi-bench/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/badlogic/pi-bench.git"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "benchmark",
+    "coding-agent",
+    "openrouter"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/extension.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "verify": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.70.2",
+    "@mariozechner/pi-coding-agent": "^0.70.2",
+    "typebox": "^1.1.33"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}
