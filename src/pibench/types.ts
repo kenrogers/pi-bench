@@ -5,6 +5,7 @@ export type CreateRunOptions = {
   cwd: string;
   modelLabel: string;
   setupLabel: string;
+  seed?: string;
 };
 
 export type BenchTask = {

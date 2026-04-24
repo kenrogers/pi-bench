@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { createRun, scoreRun } from "../src/pibench/core.ts";
 import { saveRunResult, loadHistory } from "../src/pibench/history.ts";
-import { patchDeepSeekReasoningContent } from "../src/extension.ts";
+import { parseCompareArgs, patchDeepSeekReasoningContent } from "../src/extension.ts";
 import type { BenchEvent } from "../src/pibench/types.ts";
 
 let testChain = Promise.resolve();
@@ -238,4 +238,18 @@ serialTest("non-DeepSeek payloads are left alone by the reasoning_content shim",
   };
 
   assert.equal(patchDeepSeekReasoningContent(payload), undefined);
+});
+
+serialTest("compare arguments split multi-word model queries", async () => {
+  assert.deepEqual(parseCompareArgs("quick deepseek 4 flash vs qwen/qwen3-coder vs kimi k2"), {
+    suite: "quick",
+    modelQueries: ["deepseek 4 flash", "qwen/qwen3-coder", "kimi k2"],
+  });
+});
+
+serialTest("compare arguments support comma and pipe separators", async () => {
+  assert.deepEqual(parseCompareArgs("deepseek 4 flash, qwen/qwen3-coder | kimi k2"), {
+    suite: "quick",
+    modelQueries: ["deepseek 4 flash", "qwen/qwen3-coder", "kimi k2"],
+  });
 });

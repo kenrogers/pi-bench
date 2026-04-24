@@ -5,9 +5,24 @@ import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { clearActiveRun, createRun, getActiveRun, getBenchRoot, listRuns, recordRunEvent, scoreRun, setActiveRun } from "./pibench/core.js";
 import { type OpenRouterModelSummary, searchOpenRouterModels } from "./pibench/openrouter-models.js";
-import { describeRun, formatHistory, formatRunResult, formatStatus, formatSuggestions } from "./pibench/report.js";
+import { describeRun, formatComparison, formatHistory, formatRunResult, formatStatus, formatSuggestions } from "./pibench/report.js";
+import type { BenchRunResult } from "./pibench/types.js";
 
 type CommandContext = Parameters<Parameters<ExtensionAPI["registerCommand"]>[1]["handler"]>[1];
+type PiBenchContext = Pick<CommandContext, "cwd" | "hasUI" | "model" | "modelRegistry" | "ui">;
+
+type CompareBatch = {
+  id: string;
+  suite: string;
+  cwd: string;
+  seed: string;
+  modelQueries: string[];
+  nextIndex: number;
+  currentRunId?: string;
+  results: BenchRunResult[];
+};
+
+let activeCompareBatch: CompareBatch | undefined;
 
 const knownSuites = new Set(["quick"]);
 
@@ -27,8 +42,26 @@ const parseRunArgs = (args: string): { suite: string; modelQuery?: string } => {
   return { suite: "quick", modelQuery: parts.join(" ") };
 };
 
+export const parseCompareArgs = (args: string): { suite: string; modelQueries: string[] } => {
+  const trimmed = args.trim();
+  if (!trimmed) return { suite: "quick", modelQueries: [] };
+  const parts = parseArgs(trimmed);
+  const first = parts[0];
+  const suite = first && knownSuites.has(first) ? first : "quick";
+  const queryText = suite === first ? trimmed.slice(first.length).trim() : trimmed;
+  const modelQueries = queryText
+    .split(/\s+(?:vs|versus)\s+|\s*[|,]\s*/i)
+    .map((query) => query.trim())
+    .filter(Boolean);
+  return { suite, modelQueries };
+};
+
 const runCommand = async (pi: ExtensionAPI, args: string, ctx: CommandContext) => {
   await ctx.waitForIdle();
+  if (activeCompareBatch) {
+    ctx.ui.notify("A Pi-Bench comparison is already running. Finish it or restart Pi before starting another run.", "warning");
+    return;
+  }
 
   const { suite, modelQuery } = parseRunArgs(args);
 
@@ -58,6 +91,36 @@ const runCommand = async (pi: ExtensionAPI, args: string, ctx: CommandContext) =
   ctx.ui.notify(`Pi-Bench run ${run.id} created`, "info");
 
   pi.sendUserMessage(describeRun(run));
+};
+
+const compareCommand = async (pi: ExtensionAPI, args: string, ctx: CommandContext) => {
+  await ctx.waitForIdle();
+  if (getActiveRun() || activeCompareBatch) {
+    ctx.ui.notify("A Pi-Bench run is already active. Finish it before starting a comparison.", "warning");
+    return;
+  }
+
+  const { suite, modelQueries } = parseCompareArgs(args);
+  if (modelQueries.length < 2) {
+    ctx.ui.notify("Usage: /pibench compare [suite] model one vs model two [vs model three]", "warning");
+    return;
+  }
+
+  const openRouterApiKey = await ensureOpenRouterApiKey(ctx);
+  if (!openRouterApiKey) return;
+
+  activeCompareBatch = {
+    id: buildCompareId(),
+    suite,
+    cwd: ctx.cwd,
+    seed: buildCompareId(),
+    modelQueries,
+    nextIndex: 0,
+    results: [],
+  };
+
+  ctx.ui.notify(`Pi-Bench comparison started for ${modelQueries.length} models.`, "info");
+  await startNextCompareRun(pi, ctx);
 };
 
 const doctorCommand = async (ctx: CommandContext): Promise<string> => {
@@ -91,6 +154,12 @@ const doctorCommand = async (ctx: CommandContext): Promise<string> => {
   return lines.join("\n");
 };
 
+const buildCompareId = () => {
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `${stamp}-${suffix}`;
+};
+
 const openRouterModelId = (value: string): string => {
   const trimmed = value.trim();
   return trimmed.startsWith("openrouter/") ? trimmed.slice("openrouter/".length) : trimmed;
@@ -102,7 +171,7 @@ const isOpenRouterModel = (model: Model<any>): boolean => {
   return model.provider === "openrouter" || model.provider === "openrouter-live" || model.baseUrl.includes("openrouter.ai");
 };
 
-const findExactOpenRouterModel = (ctx: CommandContext, query: string): Model<any> | undefined => {
+const findExactOpenRouterModel = (ctx: PiBenchContext, query: string): Model<any> | undefined => {
   return ctx.modelRegistry.find("openrouter", openRouterModelId(query));
 };
 
@@ -123,7 +192,7 @@ const openRouterSupportsReasoning = (model: OpenRouterModelSummary): boolean => 
 
 const registerBenchOpenRouterModel = (
   pi: ExtensionAPI,
-  ctx: CommandContext,
+  ctx: PiBenchContext,
   model: Model<any>,
   apiKey: string,
 ): Model<any> | undefined => {
@@ -153,7 +222,7 @@ const registerBenchOpenRouterModel = (
 
 const registerLiveOpenRouterModel = (
   pi: ExtensionAPI,
-  ctx: CommandContext,
+  ctx: PiBenchContext,
   model: OpenRouterModelSummary,
   apiKey: string,
 ): Model<any> | undefined => {
@@ -185,7 +254,7 @@ const registerLiveOpenRouterModel = (
   return ctx.modelRegistry.find("openrouter-live", model.id);
 };
 
-const ensureOpenRouterApiKey = async (ctx: CommandContext): Promise<string | undefined> => {
+const ensureOpenRouterApiKey = async (ctx: PiBenchContext): Promise<string | undefined> => {
   const existing = await ctx.modelRegistry.getApiKeyForProvider("openrouter");
   if (existing) return existing;
 
@@ -209,7 +278,7 @@ const ensureOpenRouterApiKey = async (ctx: CommandContext): Promise<string | und
   return apiKey;
 };
 
-const promptForOpenRouterModelQuery = async (ctx: CommandContext): Promise<string | undefined> => {
+const promptForOpenRouterModelQuery = async (ctx: PiBenchContext): Promise<string | undefined> => {
   if (!ctx.hasUI) {
     ctx.ui.notify("Pi-Bench needs an OpenRouter model. Try: /pibench run quick deepseek 4 flash", "error");
     return undefined;
@@ -226,7 +295,7 @@ const promptForOpenRouterModelQuery = async (ctx: CommandContext): Promise<strin
 
 const selectOpenRouterModel = async (
   pi: ExtensionAPI,
-  ctx: CommandContext,
+  ctx: PiBenchContext,
   modelQuery: string | undefined,
 ): Promise<Model<any> | undefined> => {
   if (modelQuery) {
@@ -254,7 +323,7 @@ const selectOpenRouterModel = async (
 
 const resolveOpenRouterModel = async (
   pi: ExtensionAPI,
-  ctx: CommandContext,
+  ctx: PiBenchContext,
   query: string,
 ): Promise<Model<any> | undefined> => {
   const openRouterApiKey = await ensureOpenRouterApiKey(ctx);
@@ -304,6 +373,58 @@ const resolveOpenRouterModel = async (
   return undefined;
 };
 
+const startNextCompareRun = async (pi: ExtensionAPI, ctx: PiBenchContext) => {
+  const batch = activeCompareBatch;
+  if (!batch) return;
+
+  while (batch.nextIndex < batch.modelQueries.length) {
+    const modelNumber = batch.nextIndex + 1;
+    const query = batch.modelQueries[batch.nextIndex];
+    batch.nextIndex += 1;
+
+    const selectedModel = await resolveOpenRouterModel(pi, ctx, query);
+    if (!selectedModel) {
+      ctx.ui.notify(`Pi-Bench comparison skipped "${query}" because no OpenRouter model matched.`, "warning");
+      continue;
+    }
+
+    const ok = await pi.setModel(selectedModel);
+    if (!ok) {
+      ctx.ui.notify(`Pi-Bench comparison skipped ${formatModelLabel(selectedModel)} because Pi could not use its OpenRouter key.`, "warning");
+      continue;
+    }
+
+    const run = await createRun({
+      suite: batch.suite,
+      cwd: batch.cwd,
+      modelLabel: formatModelLabel(selectedModel),
+      setupLabel: `compare-${batch.id}`,
+      seed: batch.seed,
+    });
+
+    batch.currentRunId = run.id;
+    setActiveRun(run.id);
+    pi.setSessionName(`Pi-Bench compare ${modelNumber}/${batch.modelQueries.length}`);
+    pi.appendEntry("pibench-run-start", run);
+    ctx.ui.setStatus("pi-bench", `Pi-Bench compare ${modelNumber}/${batch.modelQueries.length}`);
+    ctx.ui.notify(`Pi-Bench comparison run ${modelNumber}/${batch.modelQueries.length}: ${formatModelLabel(selectedModel)}`, "info");
+
+    pi.sendUserMessage([
+      `Pi-Bench comparison ${modelNumber}/${batch.modelQueries.length}.`,
+      `All comparison runs use shared task seed ${batch.seed}.`,
+      "",
+      describeRun(run),
+    ].join("\n"));
+    return;
+  }
+
+  const results = batch.results;
+  activeCompareBatch = undefined;
+  clearActiveRun();
+  ctx.ui.setStatus("pi-bench", undefined);
+  ctx.ui.notify(formatComparison(results), "info");
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
@@ -340,6 +461,7 @@ export default function piBenchExtension(pi: ExtensionAPI) {
         "run quick",
         "run quick openrouter/qwen/qwen3-coder",
         "run deepseek",
+        "compare quick deepseek 4 flash vs qwen/qwen3-coder",
         "doctor",
         "history",
         "suggest",
@@ -361,6 +483,11 @@ export default function piBenchExtension(pi: ExtensionAPI) {
 
       if (subcommand === "run") {
         await runCommand(pi, restArgs, ctx);
+        return;
+      }
+
+      if (subcommand === "compare") {
+        await compareCommand(pi, restArgs, ctx);
         return;
       }
 
@@ -387,13 +514,20 @@ export default function piBenchExtension(pi: ExtensionAPI) {
         }
         const result = await scoreRun(activeRun.id);
         pi.appendEntry("pibench-run-result", result);
+        if (activeCompareBatch?.currentRunId === activeRun.id) {
+          activeCompareBatch.results.push(result);
+          activeCompareBatch.currentRunId = undefined;
+          clearActiveRun();
+          await startNextCompareRun(pi, ctx);
+          return;
+        }
         clearActiveRun();
         ctx.ui.setStatus("pi-bench", `Pi-Bench complete ${result.score}/100`);
         ctx.ui.notify(formatRunResult(result), result.passed ? "info" : "warning");
         return;
       }
 
-      ctx.ui.notify("Usage: /pibench run [suite] [model query] | doctor | history | suggest | status | score", "warning");
+      ctx.ui.notify("Usage: /pibench run [suite] [model query] | compare [suite] model one vs model two | doctor | history | suggest | status | score", "warning");
     },
   });
 
@@ -422,6 +556,9 @@ export default function piBenchExtension(pi: ExtensionAPI) {
       const result = await scoreRun(activeRun.id, params.notes);
       pi.appendEntry("pibench-run-result", result);
       ctx.ui.setStatus("pi-bench", `Pi-Bench complete ${result.score}/100`);
+      if (activeCompareBatch?.currentRunId === activeRun.id) {
+        activeCompareBatch.results.push(result);
+      }
 
       return {
         content: [{ type: "text", text: formatRunResult(result) }],
@@ -448,8 +585,17 @@ export default function piBenchExtension(pi: ExtensionAPI) {
     });
 
     if (event.toolName === "pibench_submit" && !event.isError) {
+      const shouldContinueCompare = activeCompareBatch?.currentRunId === getActiveRun()?.id;
+      if (activeCompareBatch && shouldContinueCompare) {
+        activeCompareBatch.currentRunId = undefined;
+      }
       clearActiveRun();
       ctx.abort();
+      if (shouldContinueCompare) {
+        setTimeout(() => {
+          void startNextCompareRun(pi, ctx);
+        }, 0);
+      }
     }
   });
 

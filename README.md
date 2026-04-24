@@ -80,6 +80,7 @@ to check whether Pi-Bench can see a Pi OpenRouter key.
 
 ```text
 /pibench run [suite] [model query]
+/pibench compare [suite] model one vs model two [vs model three]
 /pibench doctor
 /pibench history
 /pibench suggest
@@ -95,6 +96,7 @@ Examples:
 /pibench run qwen/qwen3-coder
 /pibench run deepseek 4
 /pibench run quick deepseek coder
+/pibench compare quick deepseek 4 flash vs qwen/qwen3-coder vs kimi k2
 /pibench doctor
 /pibench history
 /pibench suggest
@@ -106,6 +108,11 @@ OpenRouter model to run. Queries like `deepseek 4` are matched against
 OpenRouter's live `/api/v1/models` list so recent releases can be used before
 Pi's generated model registry knows about them. If OpenRouter finds a match that
 Pi does not know yet, Pi-Bench registers a temporary `openrouter-live` provider.
+
+`/pibench compare` runs multiple models sequentially. Separate model queries
+with `vs`, `|`, or commas. Each model gets its own fresh workspace and history
+entry, but all runs in the comparison share the same generated task seed so the
+scores are easier to compare.
 
 ## How It Works
 

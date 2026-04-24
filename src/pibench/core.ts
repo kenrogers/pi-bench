@@ -30,6 +30,7 @@ export const recordRunEvent = async (event: BenchRun["events"][number]) => {
 
 export const createRun = async (options: CreateRunOptions): Promise<BenchRun> => {
   const id = buildRunId();
+  const seed = options.seed ?? id;
   const root = path.join(getBenchRoot(), "runs", id);
   const workspace = path.join(root, "workspace");
 
@@ -37,7 +38,7 @@ export const createRun = async (options: CreateRunOptions): Promise<BenchRun> =>
     throw new Error(`Unknown Pi-Bench suite: ${options.suite}`);
   }
 
-  const task = await createQuickTask({ workspace, seed: id });
+  const task = await createQuickTask({ workspace, seed });
   const initialSnapshot = await snapshotFiles(workspace);
 
   const run: BenchRun = {

@@ -52,6 +52,20 @@ export const formatHistory = (runs: BenchRunResult[]) => {
   ].join(" | ")).join("\n");
 };
 
+export const formatComparison = (results: BenchRunResult[]) => {
+  if (results.length === 0) return "Pi-Bench comparison finished with no scored runs.";
+  const ranked = [...results].sort((a, b) => b.score - a.score);
+  return [
+    "Pi-Bench comparison complete",
+    "",
+    ...ranked.map((run, index) => [
+      `${index + 1}. ${run.score}/100 ${run.passed ? "pass" : "fail"} ${run.modelLabel}`,
+      `visible ${formatTestSummary(run.visible)}, hidden ${formatTestSummary(run.hidden)}`,
+      `${run.process.toolCalls} tool calls, ${run.process.testRuns} test runs`,
+    ].join(" | ")),
+  ].join("\n");
+};
+
 export const formatSuggestions = (runs: BenchRunResult[]) => {
   if (runs.length === 0) {
     return "Run a few Pi-Bench trials first. Suggestions get better once there is history.";
