@@ -410,7 +410,11 @@ const resolveOpenRouterModel = async (
   return undefined;
 };
 
-const startNextCompareRun = async (pi: ExtensionAPI, ctx: PiBenchContext) => {
+const startNextCompareRun = async (
+  pi: ExtensionAPI,
+  ctx: PiBenchContext,
+  deliverAs?: "followUp",
+) => {
   const batch = activeCompareBatch;
   if (!batch) return;
 
@@ -446,12 +450,13 @@ const startNextCompareRun = async (pi: ExtensionAPI, ctx: PiBenchContext) => {
     ctx.ui.setStatus("pi-bench", `Pi-Bench compare ${modelNumber}/${batch.modelQueries.length}`);
     ctx.ui.notify(`Pi-Bench comparison run ${modelNumber}/${batch.modelQueries.length}: ${formatModelLabel(selectedModel)}`, "info");
 
-    pi.sendUserMessage([
+    const prompt = [
       `Pi-Bench comparison ${modelNumber}/${batch.modelQueries.length}.`,
       `All comparison runs use shared task seed ${batch.seed}.`,
       "",
       describeRun(run),
-    ].join("\n"));
+    ].join("\n");
+    pi.sendUserMessage(prompt, deliverAs ? { deliverAs } : undefined);
     return;
   }
 
@@ -629,7 +634,7 @@ export default function piBenchExtension(pi: ExtensionAPI) {
       clearActiveRun();
       if (shouldContinueCompare) {
         setTimeout(() => {
-          void startNextCompareRun(pi, ctx);
+          void startNextCompareRun(pi, ctx, "followUp");
         }, 0);
       }
     }
