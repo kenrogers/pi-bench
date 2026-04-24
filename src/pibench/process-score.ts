@@ -66,6 +66,12 @@ export const scoreProcess = (events: BenchEvent[]): ProcessScore => {
   if (toolCalls.length > 40) {
     score -= 0.1;
     observations.push("high tool-call count suggests possible thrashing");
+  } else if (toolCalls.length <= 8 && submitCalls.length > 0) {
+    score += 0.03;
+    observations.push("completed with a compact tool trace");
+  } else if (toolCalls.length <= 12 && submitCalls.length > 0) {
+    score += 0.01;
+    observations.push("completed with a moderate tool trace");
   }
 
   if (toolCallsAfterSubmit > 0) {

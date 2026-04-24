@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createQuickTask } from "./tasks/quick.js";
+import { createStandardTask } from "./tasks/standard.js";
 import { loadHistory, saveRunResult } from "./history.js";
 import { scoreProcess } from "./process-score.js";
 import type { BenchRun, BenchRunResult, CreateRunOptions, FileSnapshot } from "./types.js";
@@ -34,11 +35,13 @@ export const createRun = async (options: CreateRunOptions): Promise<BenchRun> =>
   const root = path.join(getBenchRoot(), "runs", id);
   const workspace = path.join(root, "workspace");
 
-  if (options.suite !== "quick") {
+  if (options.suite !== "quick" && options.suite !== "standard") {
     throw new Error(`Unknown Pi-Bench suite: ${options.suite}`);
   }
 
-  const task = await createQuickTask({ workspace, seed });
+  const task = options.suite === "standard"
+    ? await createStandardTask({ workspace, seed })
+    : await createQuickTask({ workspace, seed });
   const initialSnapshot = await snapshotFiles(workspace);
 
   const run: BenchRun = {

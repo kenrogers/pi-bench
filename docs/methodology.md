@@ -30,11 +30,15 @@ from reliable coding agents:
 - avoid tool use after submitting
 - avoid provider/API errors during the run
 
+Compact successful tool traces receive a tiny bonus. It is intentionally small:
+fewer tool calls are useful for latency and cost, but they should not outrank
+correctness or healthy inspect-test-submit behavior.
+
 Efficiency is a small positive bonus rather than a large penalty. Real agents
 often make several reasonable edits on the way to a good patch, so churn should
 distinguish clean work from thrashing without drowning out correctness.
 
-## What The Quick Suite Measures
+## What The Suites Measure
 
 The quick suite generates one tiny dependency-free Node package per run. The
 current task catalog covers receipt math, inventory normalization, and settings
@@ -48,11 +52,18 @@ parsing. Together they test:
 
 It is intentionally dependency-free so it can run inside any Pi setup.
 
+The standard suite is still dependency-free, but uses a broader multi-file task.
+It tests whether the agent can coordinate parser, planner, and public export
+behavior while preserving edge cases that are only described in the task prompt
+and hidden tests. It is the better suite for comparing strong models because it
+has more room between "passes the visible examples" and "actually generalized
+the requested behavior."
+
 ## Known Limits
 
-- One small task catalog cannot represent agentic coding broadly. More suites need to cover
-  multi-file reasoning, dependency use, vague bug reports, UI work, migrations,
-  and failing-test diagnosis.
+- The current task catalog cannot represent agentic coding broadly. More suites
+  need to cover dependency use, vague bug reports, UI work, migrations, and
+  failing-test diagnosis.
 - Hidden tests are useful, but score calibration must stay visible enough that
   users trust the result.
 - Token cost and wall-clock time are not yet first-class score inputs. They
@@ -73,6 +84,8 @@ The test suite currently validates these bands:
 - complete fix with realistic process: near top
 - complete fix with provider/API interruption: correctness credit with process
   penalty
+- broader standard-suite scaffold: multi-file task with more visible and hidden
+  checks
 - repeated scoring of the same run: one history row with incremented attempt
 
 These are sanity checks, not a replacement for real model runs.

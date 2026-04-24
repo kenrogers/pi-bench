@@ -199,6 +199,24 @@ serialTest("quick suite task catalog generates runnable visible and hidden check
   }
 });
 
+serialTest("standard suite generates a broader multi-file task", async () => {
+  await withTempHome(async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "pibench-cwd-"));
+    const run = await createRun({
+      suite: "standard",
+      cwd,
+      modelLabel: "test/model",
+      setupLabel: "test-setup",
+    });
+    const result = await scoreRun(run.id);
+
+    assert.equal(result.visible.totalCount, 4);
+    assert.equal(result.hidden.totalCount, 6);
+    assert.match(Object.keys(run.initialSnapshot).join("\n"), /src\/parser\.js/);
+    assert.match(Object.keys(run.initialSnapshot).join("\n"), /src\/planner\.js/);
+  });
+});
+
 serialTest("saving the same run twice keeps one history row and increments attempts", async () => {
   await withTempHome(async () => {
     const run = await createTestRun();
@@ -265,6 +283,13 @@ serialTest("run arguments can detect comma-separated comparison models", async (
 serialTest("natural compare arguments inherit model family prefixes", async () => {
   assert.deepEqual(parseCompareArgs("deepseek4 pro and flash"), {
     suite: "quick",
+    modelQueries: ["deepseek4 pro", "deepseek4 flash"],
+  });
+});
+
+serialTest("compare arguments support the standard suite", async () => {
+  assert.deepEqual(parseCompareArgs("standard deepseek4 pro and flash"), {
+    suite: "standard",
     modelQueries: ["deepseek4 pro", "deepseek4 flash"],
   });
 });

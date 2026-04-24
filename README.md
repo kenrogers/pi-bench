@@ -92,12 +92,14 @@ Examples:
 
 ```text
 /pibench run quick
+/pibench run standard
 /pibench run quick openrouter/qwen/qwen3-coder
 /pibench run qwen/qwen3-coder
 /pibench run deepseek 4
 /pibench run quick deepseek coder
 /pibench run deepseek4pro, deepseek4flash, kimik2.6
 /pibench compare deepseek4 pro and flash
+/pibench compare standard deepseek4 pro and flash
 /pibench compare quick deepseek 4 flash vs qwen/qwen3-coder vs kimi k2
 /pibench doctor
 /pibench history
@@ -118,6 +120,17 @@ the previous model family, so `deepseek4 pro and flash` becomes `deepseek4 pro`
 and `deepseek4 flash`. Each model gets its own fresh workspace and history
 entry, but all runs in the comparison share the same generated task seed so the
 scores are easier to compare.
+
+Suites:
+
+- `quick`: one tiny single-package task. Good for smoke-testing installation,
+  model resolution, and provider reliability.
+- `standard`: a broader dependency-free task with multiple source files and
+  more hidden edge cases. Better for comparing capable coding models.
+
+Pi-Bench temporarily switches Pi to the benchmark model while a run is active.
+When the run or comparison finishes, it restores the model that was selected
+before the benchmark started.
 
 ## How It Works
 
@@ -159,6 +172,10 @@ Current weighting:
 - 15 points: observed process quality
 - 5 points: small-task efficiency/churn
 
+Process quality includes a small efficiency nudge for compact, successful tool
+traces. This helps comparison runs distinguish two fully-correct agents when one
+gets to the same answer with fewer tool calls.
+
 Repeated submissions for the same run update one history row and increment the
 attempt count, so `/pibench history` shows the latest result for each run rather
 than duplicate partial attempts.
@@ -173,8 +190,10 @@ calibration scenarios.
 Some DeepSeek models on OpenRouter require reasoning content to be replayed
 during thinking-mode tool calls. Pi-Bench patches active benchmark requests so
 OpenRouter's `reasoning` field is also sent as DeepSeek's expected
-`reasoning_content` field. If you still see a `reasoning_content` provider
-error, update Pi-Bench and restart Pi.
+`reasoning_content` field. It also keeps that compatibility patch active after
+the run so follow-up turns in the same Pi session do not fail while replaying
+benchmark messages. If you still see a `reasoning_content` provider error,
+update Pi-Bench and restart Pi.
 
 ## Development
 

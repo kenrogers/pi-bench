@@ -1,4 +1,4 @@
-export type BenchSuite = "quick";
+export type BenchSuite = "quick" | "standard";
 
 export type CreateRunOptions = {
   suite: string;

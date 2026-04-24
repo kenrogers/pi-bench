@@ -16,6 +16,7 @@ type CompareBatch = {
   suite: string;
   cwd: string;
   seed: string;
+  originalModel?: Model<any>;
   modelQueries: string[];
   nextIndex: number;
   currentRunId?: string;
@@ -23,8 +24,9 @@ type CompareBatch = {
 };
 
 let activeCompareBatch: CompareBatch | undefined;
+let activeRunOriginalModel: Model<any> | undefined;
 
-const knownSuites = new Set(["quick"]);
+const knownSuites = new Set(["quick", "standard"]);
 
 const parseArgs = (args: string): string[] => args.trim().split(/\s+/).filter(Boolean);
 
@@ -99,8 +101,10 @@ const runCommand = async (pi: ExtensionAPI, args: string, ctx: CommandContext) =
   const openRouterApiKey = await ensureOpenRouterApiKey(ctx);
   if (!openRouterApiKey) return;
 
+  activeRunOriginalModel = ctx.model;
   const ok = await pi.setModel(selectedModel);
   if (!ok) {
+    activeRunOriginalModel = undefined;
     ctx.ui.notify(`Pi-Bench found ${formatModelLabel(selectedModel)}, but Pi has no usable OpenRouter API key for it.`, "error");
     return;
   }
@@ -151,6 +155,7 @@ const startCompareBatch = async (
     suite,
     cwd: ctx.cwd,
     seed: buildCompareId(),
+    originalModel: ctx.model,
     modelQueries,
     nextIndex: 0,
     results: [],
@@ -203,6 +208,20 @@ const openRouterModelId = (value: string): string => {
 };
 
 const formatModelLabel = (model: Pick<Model<any>, "provider" | "id">): string => `${model.provider}/${model.id}`;
+
+const restoreModel = async (
+  pi: ExtensionAPI,
+  ctx: PiBenchContext,
+  model: Model<any> | undefined,
+) => {
+  if (!model) return;
+  const ok = await pi.setModel(model);
+  if (ok) {
+    ctx.ui.notify(`Pi-Bench restored your previous model: ${formatModelLabel(model)}.`, "info");
+  } else {
+    ctx.ui.notify(`Pi-Bench could not restore your previous model: ${formatModelLabel(model)}.`, "warning");
+  }
+};
 
 const isOpenRouterModel = (model: Model<any>): boolean => {
   return model.provider === "openrouter" || model.provider === "openrouter-live" || model.baseUrl.includes("openrouter.ai");
@@ -461,8 +480,10 @@ const startNextCompareRun = async (
   }
 
   const results = batch.results;
+  const originalModel = batch.originalModel;
   activeCompareBatch = undefined;
   clearActiveRun();
+  await restoreModel(pi, ctx, originalModel);
   ctx.ui.setStatus("pi-bench", undefined);
   ctx.ui.notify(formatComparison(results), "info");
 };
@@ -501,7 +522,9 @@ export default function piBenchExtension(pi: ExtensionAPI) {
     getArgumentCompletions(prefix: string) {
       const options = [
         "run quick",
+        "run standard",
         "run quick openrouter/qwen/qwen3-coder",
+        "compare standard deepseek 4 pro vs deepseek 4 flash",
         "run deepseek",
         "compare quick deepseek 4 flash vs qwen/qwen3-coder",
         "doctor",
@@ -563,7 +586,10 @@ export default function piBenchExtension(pi: ExtensionAPI) {
           await startNextCompareRun(pi, ctx);
           return;
         }
+        const originalModel = activeRunOriginalModel;
+        activeRunOriginalModel = undefined;
         clearActiveRun();
+        await restoreModel(pi, ctx, originalModel);
         ctx.ui.setStatus("pi-bench", `Pi-Bench complete ${result.score}/100`);
         ctx.ui.notify(formatRunResult(result), result.passed ? "info" : "warning");
         return;
@@ -631,11 +657,15 @@ export default function piBenchExtension(pi: ExtensionAPI) {
       if (activeCompareBatch && shouldContinueCompare) {
         activeCompareBatch.currentRunId = undefined;
       }
+      const originalModel = activeRunOriginalModel;
+      activeRunOriginalModel = undefined;
       clearActiveRun();
       if (shouldContinueCompare) {
         setTimeout(() => {
           void startNextCompareRun(pi, ctx, "followUp");
         }, 0);
+      } else {
+        await restoreModel(pi, ctx, originalModel);
       }
     }
   });
@@ -651,7 +681,6 @@ export default function piBenchExtension(pi: ExtensionAPI) {
   });
 
   pi.on("before_provider_request", async (event) => {
-    if (!getActiveRun()) return undefined;
     return patchDeepSeekReasoningContent(event.payload);
   });
 
