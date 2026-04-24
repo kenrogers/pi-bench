@@ -47,7 +47,7 @@ const getOpenRouterModels = async (): Promise<OpenRouterModelSummary[]> => {
 
   const response = await fetch("https://openrouter.ai/api/v1/models", {
     headers: {
-      "HTTP-Referer": "https://github.com/badlogic/pi-bench",
+      "HTTP-Referer": "https://github.com/kenrogers/pi-bench",
       "X-Title": "Pi-Bench",
     },
   });

@@ -37,7 +37,7 @@ Public score sharing is intentionally not included yet.
 Clone the repo, install dependencies, and run Pi with the extension:
 
 ```bash
-git clone https://github.com/badlogic/pi-bench.git
+git clone https://github.com/kenrogers/pi-bench.git
 cd pi-bench
 npm install
 pi -e ./src/extension.ts

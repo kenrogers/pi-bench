@@ -6,13 +6,13 @@
   "private": false,
   "license": "MIT",
   "author": "Kenny <https://github.com/badlogic>",
-  "homepage": "https://github.com/badlogic/pi-bench#readme",
+  "homepage": "https://github.com/kenrogers/pi-bench#readme",
   "bugs": {
-    "url": "https://github.com/badlogic/pi-bench/issues"
+    "url": "https://github.com/kenrogers/pi-bench/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/badlogic/pi-bench.git"
+    "url": "git+https://github.com/kenrogers/pi-bench.git"
   },
   "keywords": [
     "pi-package",
