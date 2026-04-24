@@ -40,6 +40,8 @@ const normalize = (value: string): string =>
 
 const compact = (value: string): string => normalize(value).replace(/\s+/g, "");
 
+const versionlessCompact = (value: string): string => compact(value).replace(/v(?=\d)/g, "");
+
 const getOpenRouterModels = async (): Promise<OpenRouterModelSummary[]> => {
   if (cachedModels && Date.now() - cachedModels.at < cacheMs) {
     return cachedModels.models;
@@ -64,8 +66,10 @@ const getOpenRouterModels = async (): Promise<OpenRouterModelSummary[]> => {
 const scoreModel = (query: string, model: OpenRouterModelSummary): number => {
   const haystack = normalize(`${model.id} ${model.name ?? ""}`);
   const haystackCompact = compact(`${model.id} ${model.name ?? ""}`);
+  const haystackVersionless = versionlessCompact(`${model.id} ${model.name ?? ""}`);
   const queryNorm = normalize(query);
   const queryCompact = compact(query);
+  const queryVersionless = versionlessCompact(query);
   const tokens = queryNorm.split(" ").filter(Boolean);
 
   if (!queryNorm || tokens.length === 0) return 0;
@@ -73,6 +77,7 @@ const scoreModel = (query: string, model: OpenRouterModelSummary): number => {
   if ((model.name ?? "").toLowerCase() === query.toLowerCase()) return 9500;
   if (haystack === queryNorm) return 9000;
   if (haystackCompact === queryCompact) return 8500;
+  if (haystackVersionless === queryVersionless) return 8400;
 
   const tokenHits = tokens.filter((token) => haystack.includes(token)).length;
   if (tokenHits === 0) return 0;
@@ -81,6 +86,7 @@ const scoreModel = (query: string, model: OpenRouterModelSummary): number => {
   if (tokenHits === tokens.length) score += 1000;
   if (haystack.includes(queryNorm)) score += 600;
   if (haystackCompact.includes(queryCompact)) score += 400;
+  if (haystackVersionless.includes(queryVersionless)) score += 450;
   if (model.id.toLowerCase().startsWith(query.toLowerCase())) score += 300;
   if (model.name?.toLowerCase().startsWith(query.toLowerCase())) score += 250;
 

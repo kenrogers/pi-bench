@@ -53,10 +53,30 @@ export const parseCompareArgs = (args: string): { suite: string; modelQueries: s
 };
 
 export const splitModelQueries = (queryText: string): string[] => {
-  return queryText
-    .split(/\s+(?:vs|versus)\s+|\s*[|,]\s*/i)
+  const rawQueries = queryText
+    .split(/\s+(?:vs|versus|and)\s+|\s*[|,]\s*/i)
     .map((query) => query.trim())
     .filter(Boolean);
+  return expandModelQueryFragments(rawQueries);
+};
+
+const expandModelQueryFragments = (queries: string[]): string[] => {
+  const expanded: string[] = [];
+  let inheritedPrefix: string | undefined;
+
+  for (const query of queries) {
+    const tokens = parseArgs(query);
+    const shouldInherit = inheritedPrefix && tokens.length === 1 && !query.includes("/");
+    const expandedQuery = shouldInherit ? `${inheritedPrefix} ${query}` : query;
+    expanded.push(expandedQuery);
+
+    const expandedTokens = parseArgs(expandedQuery);
+    if (expandedTokens.length > 1) {
+      inheritedPrefix = expandedTokens.slice(0, -1).join(" ");
+    }
+  }
+
+  return expanded;
 };
 
 const runCommand = async (pi: ExtensionAPI, args: string, ctx: CommandContext) => {

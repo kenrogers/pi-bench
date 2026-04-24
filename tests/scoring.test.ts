@@ -261,3 +261,10 @@ serialTest("run arguments can detect comma-separated comparison models", async (
     "kimik2.6",
   ]);
 });
+
+serialTest("natural compare arguments inherit model family prefixes", async () => {
+  assert.deepEqual(parseCompareArgs("deepseek4 pro and flash"), {
+    suite: "quick",
+    modelQueries: ["deepseek4 pro", "deepseek4 flash"],
+  });
+});
