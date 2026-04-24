@@ -33,7 +33,25 @@ Public score sharing is intentionally not included yet.
 
 ## Install
 
-Clone the repo, install dependencies, and run Pi with the extension:
+Install Pi-Bench as a Pi package from GitHub:
+
+```bash
+pi install git:github.com/kenrogers/pi-bench
+```
+
+Then launch Pi normally from any project where you want to run the benchmark:
+
+```bash
+pi
+```
+
+For a pinned install, use a tag or commit:
+
+```bash
+pi install git:github.com/kenrogers/pi-bench@v0.1.0
+```
+
+For local development, clone the repo and run the extension directly:
 
 ```bash
 git clone https://github.com/kenrogers/pi-bench.git
@@ -41,14 +59,6 @@ cd pi-bench
 npm install
 pi -e ./src/extension.ts
 ```
-
-You can also install it as a Pi package from a checkout:
-
-```bash
-pi install .
-```
-
-Then launch Pi normally from a project where you want to run the benchmark.
 
 ## OpenRouter Keys
 
@@ -151,6 +161,8 @@ npm install
 npm run verify
 pi -e ./src/extension.ts
 ```
+
+To test package installation from a checkout, run `pi install .`.
 
 `npm run verify` runs TypeScript checking and the calibration tests.
 
