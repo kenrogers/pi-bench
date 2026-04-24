@@ -17,7 +17,7 @@ answers: "How well did this model work inside my Pi setup on this coding task?"
 Pi-Bench is early but usable. The first public release includes:
 
 - local benchmark run generation
-- fuzzy Pi/OpenRouter model resolution
+- fuzzy OpenRouter model resolution
 - visible and hidden test scoring
 - process scoring from Pi tool events
 - provider/API interruption tracking
@@ -29,8 +29,7 @@ Public score sharing is intentionally not included yet.
 
 - Node.js 20+
 - Pi 0.70+
-- A configured model in Pi
-- Optional but recommended: an OpenRouter key configured in Pi for live model lookup
+- An OpenRouter API key
 
 ## Install
 
@@ -53,8 +52,11 @@ Then launch Pi normally from a project where you want to run the benchmark.
 
 ## OpenRouter Keys
 
-Pi-Bench uses Pi's existing model registry. If Pi already has an OpenRouter key,
-Pi-Bench can reuse it. The extension does not store OpenRouter credentials.
+Pi-Bench is OpenRouter-first. If Pi already has an OpenRouter key, Pi-Bench
+reuses it. If not, `/pibench run` prompts for one and saves it through Pi's
+normal auth storage at `~/.pi/agent/auth.json`.
+
+You can also set `OPENROUTER_API_KEY` before launching Pi.
 
 Run:
 
@@ -80,6 +82,7 @@ Examples:
 ```text
 /pibench run quick
 /pibench run quick openrouter/qwen/qwen3-coder
+/pibench run qwen/qwen3-coder
 /pibench run deepseek 4
 /pibench run quick deepseek coder
 /pibench doctor
@@ -87,11 +90,12 @@ Examples:
 /pibench suggest
 ```
 
-Model selection is fuzzy. Pi-Bench checks Pi's available model registry first,
-then searches OpenRouter's live `/api/v1/models` list for recent releases and
-aliases. If OpenRouter finds a match that Pi's generated registry does not know
-yet, Pi-Bench registers a temporary `openrouter-live` provider using your
-existing Pi OpenRouter key.
+Model selection is OpenRouter-only and fuzzy. If the current Pi model is already
+an OpenRouter model, `/pibench run quick` uses it. Otherwise Pi-Bench asks which
+OpenRouter model to run. Queries like `deepseek 4` are matched against
+OpenRouter's live `/api/v1/models` list so recent releases can be used before
+Pi's generated model registry knows about them. If OpenRouter finds a match that
+Pi does not know yet, Pi-Bench registers a temporary `openrouter-live` provider.
 
 ## How It Works
 

@@ -32,21 +32,22 @@ const runCommand = async (pi: ExtensionAPI, args: string, ctx: CommandContext) =
 
   const { suite, modelQuery } = parseRunArgs(args);
 
-  const selectedModel = modelQuery ? await resolveModel(pi, ctx, modelQuery) : undefined;
-  if (modelQuery && !selectedModel) return;
+  const selectedModel = await selectOpenRouterModel(pi, ctx, modelQuery);
+  if (!selectedModel) return;
 
-  if (selectedModel) {
-    const ok = await pi.setModel(selectedModel);
-    if (!ok) {
-      ctx.ui.notify(`Pi-Bench found ${formatModelLabel(selectedModel)}, but Pi has no usable API key for it.`, "error");
-      return;
-    }
+  const openRouterApiKey = await ensureOpenRouterApiKey(ctx);
+  if (!openRouterApiKey) return;
+
+  const ok = await pi.setModel(selectedModel);
+  if (!ok) {
+    ctx.ui.notify(`Pi-Bench found ${formatModelLabel(selectedModel)}, but Pi has no usable OpenRouter API key for it.`, "error");
+    return;
   }
 
   const run = await createRun({
     suite,
     cwd: ctx.cwd,
-    modelLabel: selectedModel ? formatModelLabel(selectedModel) : ctx.model ? formatModelLabel(ctx.model) : "unknown",
+    modelLabel: formatModelLabel(selectedModel),
     setupLabel: "current-pi-setup",
   });
 
@@ -90,67 +91,19 @@ const doctorCommand = async (ctx: CommandContext): Promise<string> => {
   return lines.join("\n");
 };
 
-const splitModel = (value: string): [string, string] => {
-  const parts = value.split("/");
-  if (parts.length < 2) {
-    return ["openrouter", value];
-  }
-  if (parts[0] === "openrouter") {
-    return ["openrouter", parts.slice(1).join("/")];
-  }
-  return [parts[0], parts.slice(1).join("/")];
+const openRouterModelId = (value: string): string => {
+  const trimmed = value.trim();
+  return trimmed.startsWith("openrouter/") ? trimmed.slice("openrouter/".length) : trimmed;
 };
 
 const formatModelLabel = (model: Pick<Model<any>, "provider" | "id">): string => `${model.provider}/${model.id}`;
 
-const fuzzyScore = (query: string, model: Pick<Model<any>, "provider" | "id" | "name">): number => {
-  const normalize = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim()
-      .replace(/\s+/g, " ");
-  const queryNorm = normalize(query);
-  const haystack = normalize(`${model.provider}/${model.id} ${model.id} ${model.name}`);
-  const queryCompact = queryNorm.replace(/\s+/g, "");
-  const haystackCompact = haystack.replace(/\s+/g, "");
-  const tokens = queryNorm.split(" ").filter(Boolean);
-  if (tokens.length === 0) return 0;
-
-  if (formatModelLabel(model).toLowerCase() === query.toLowerCase()) return 10000;
-  if (model.id.toLowerCase() === query.toLowerCase()) return 9500;
-  if (model.name.toLowerCase() === query.toLowerCase()) return 9000;
-  if (haystackCompact === queryCompact) return 8500;
-
-  const tokenHits = tokens.filter((token) => haystack.includes(token)).length;
-  if (tokenHits === 0) return 0;
-
-  let score = tokenHits * 100;
-  if (tokenHits === tokens.length) score += 1000;
-  if (haystack.includes(queryNorm)) score += 500;
-  if (haystackCompact.includes(queryCompact)) score += 300;
-  return score;
+const isOpenRouterModel = (model: Model<any>): boolean => {
+  return model.provider === "openrouter" || model.provider === "openrouter-live" || model.baseUrl.includes("openrouter.ai");
 };
 
-const findExactAvailableModel = (ctx: CommandContext, query: string): Model<any> | undefined => {
-  const exact = ctx.modelRegistry.find(...splitModel(query));
-  if (exact) return exact;
-
-  const [provider, id] = splitModel(query);
-  const providerlessExact = provider === "openrouter" ? ctx.modelRegistry.find("openrouter", id) : undefined;
-  if (providerlessExact) return providerlessExact;
-
-  return undefined;
-};
-
-const findFuzzyAvailableModel = (ctx: CommandContext, query: string): Model<any> | undefined => {
-  const candidates = ctx.modelRegistry
-    .getAvailable()
-    .map((model) => ({ model, score: fuzzyScore(query, model) }))
-    .filter((candidate) => candidate.score > 0)
-    .sort((a, b) => b.score - a.score);
-
-  return candidates[0]?.model;
+const findExactOpenRouterModel = (ctx: CommandContext, query: string): Model<any> | undefined => {
+  return ctx.modelRegistry.find("openrouter", openRouterModelId(query));
 };
 
 const costPerMillionTokens = (value: string | undefined): number => {
@@ -173,9 +126,8 @@ const registerLiveOpenRouterModel = async (
   ctx: CommandContext,
   model: OpenRouterModelSummary,
 ): Promise<Model<any> | undefined> => {
-  const apiKey = await ctx.modelRegistry.getApiKeyForProvider("openrouter");
+  const apiKey = await ensureOpenRouterApiKey(ctx);
   if (!apiKey) {
-    ctx.ui.notify(`OpenRouter matched the model, but Pi has no OpenRouter API key configured.`, "error");
     return undefined;
   }
 
@@ -204,12 +156,74 @@ const registerLiveOpenRouterModel = async (
   return ctx.modelRegistry.find("openrouter-live", model.id);
 };
 
-const resolveModel = async (
+const ensureOpenRouterApiKey = async (ctx: CommandContext): Promise<string | undefined> => {
+  const existing = await ctx.modelRegistry.getApiKeyForProvider("openrouter");
+  if (existing) return existing;
+
+  if (!ctx.hasUI) {
+    ctx.ui.notify(
+      "Pi-Bench needs an OpenRouter API key. Run Pi interactively, use Pi's /login flow, or set OPENROUTER_API_KEY.",
+      "error",
+    );
+    return undefined;
+  }
+
+  const entered = await ctx.ui.input("OpenRouter API key", "sk-or-v1-...");
+  const apiKey = entered?.trim();
+  if (!apiKey) {
+    ctx.ui.notify("Pi-Bench run cancelled: no OpenRouter API key was entered.", "warning");
+    return undefined;
+  }
+
+  ctx.modelRegistry.authStorage.set("openrouter", { type: "api_key", key: apiKey });
+  ctx.ui.notify("OpenRouter key saved to Pi auth storage.", "info");
+  return apiKey;
+};
+
+const promptForOpenRouterModelQuery = async (ctx: CommandContext): Promise<string | undefined> => {
+  if (!ctx.hasUI) {
+    ctx.ui.notify("Pi-Bench needs an OpenRouter model. Try: /pibench run quick deepseek 4 flash", "error");
+    return undefined;
+  }
+
+  const entered = await ctx.ui.input("OpenRouter model", "deepseek 4 flash");
+  const query = entered?.trim();
+  if (!query) {
+    ctx.ui.notify("Pi-Bench run cancelled: no OpenRouter model was selected.", "warning");
+    return undefined;
+  }
+  return query;
+};
+
+const selectOpenRouterModel = async (
+  pi: ExtensionAPI,
+  ctx: CommandContext,
+  modelQuery: string | undefined,
+): Promise<Model<any> | undefined> => {
+  if (modelQuery) {
+    return resolveOpenRouterModel(pi, ctx, modelQuery);
+  }
+
+  if (ctx.model && isOpenRouterModel(ctx.model)) {
+    ctx.ui.notify(`Pi-Bench will use the current OpenRouter model ${formatModelLabel(ctx.model)}.`, "info");
+    return ctx.model;
+  }
+
+  const openRouterApiKey = await ensureOpenRouterApiKey(ctx);
+  if (!openRouterApiKey) return undefined;
+
+  const promptedQuery = await promptForOpenRouterModelQuery(ctx);
+  if (!promptedQuery) return undefined;
+
+  return resolveOpenRouterModel(pi, ctx, promptedQuery);
+};
+
+const resolveOpenRouterModel = async (
   pi: ExtensionAPI,
   ctx: CommandContext,
   query: string,
 ): Promise<Model<any> | undefined> => {
-  const exactLocalMatch = findExactAvailableModel(ctx, query);
+  const exactLocalMatch = findExactOpenRouterModel(ctx, query);
   if (exactLocalMatch) {
     ctx.ui.notify(`Pi-Bench matched "${query}" to ${formatModelLabel(exactLocalMatch)}.`, "info");
     return exactLocalMatch;
@@ -242,12 +256,6 @@ const resolveModel = async (
   if (liveModel) {
     ctx.ui.notify(`Pi-Bench matched "${query}" to live OpenRouter model ${resolvedId}.`, "info");
     return liveModel;
-  }
-
-  const fuzzyLocalMatch = findFuzzyAvailableModel(ctx, query);
-  if (fuzzyLocalMatch) {
-    ctx.ui.notify(`Pi-Bench matched "${query}" to ${formatModelLabel(fuzzyLocalMatch)}.`, "info");
-    return fuzzyLocalMatch;
   }
 
   return undefined;
